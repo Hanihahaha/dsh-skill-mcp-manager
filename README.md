@@ -8,7 +8,7 @@ A DeepSeek Harness (DSH) plugin for managing Skills and MCP servers from a sessi
 
 - **Skills:** list, inspect, create, update, and delete `SKILL.md` bundles in available provider roots.
 - **MCP servers:** list, inspect, add, update, remove, and reload `@deepseek-ai/dsh-mcp-client` entries.
-- **Web settings:** adds a Skills & MCP section with separate tabs, forms, and lifecycle actions.
+- **Web settings:** adds a Skill & MCP section with separate tabs, forms, and lifecycle actions.
 
 ## Install
 
