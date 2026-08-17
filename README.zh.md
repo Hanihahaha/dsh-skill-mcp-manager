@@ -12,7 +12,7 @@ DeepSeek Harness(DSH)插件:在会话内直接管理 Harness 的 **Skill** 和 *
 
 ```bash
 # 在仓库根目录执行；相对路径会锚定到当前目录
-dsh plugin --profile web add ".\packages\dsh-skill-mcp-manager"
+dsh plugin --profile web add ".\dsh-skill-mcp-manager"
 ```
 
 包内 `cordis.patch.yml` 声明了 `dsh.bundle`,安装后会自动作为 bundle 层插入 `skill-mcp-manager` 条目;`package.json` 另声明 `dsh.client`(web 平台),web 启动时 `dsh-client-modules` 会把 `lib/client.js` 加入 boot 图并通过 `/plugins/dsh-skill-mcp-manager/client.js` 提供。**重启 `dsh web` 后生效**(设置页需要 web 界面)。

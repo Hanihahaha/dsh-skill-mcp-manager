@@ -14,7 +14,7 @@ A DeepSeek Harness (DSH) plugin for managing Skills and MCP servers from a sessi
 
 ```powershell
 # Run from the repository root.
-dsh plugin --profile web add ".\packages\dsh-skill-mcp-manager"
+dsh plugin --profile web add ".\dsh-skill-mcp-manager"
 ```
 
 The bundle patch adds `skill-mcp-manager`; the package's `dsh.client` declaration exposes `lib/client.js` to the existing DSH Web boot graph. Restart `dsh web` after installation.

@@ -5,6 +5,16 @@
 import { readFileSync } from "node:fs";
 
 const code = readFileSync(new URL("../lib/client.js", import.meta.url), "utf8");
+const topLevelSkillEditor = 'editing === "new" ? h(SkillForm';
+const inlineSkillEditor = "editing === skill.name ? h(SkillForm";
+const topLevelMcpEditor = 'editing === "new" ? h(McpForm';
+const inlineMcpEditor = "editing === server.serverName ? h(McpForm";
+for (const editor of [topLevelSkillEditor, inlineSkillEditor, topLevelMcpEditor, inlineMcpEditor]) {
+	if (!code.includes(editor)) throw new Error(`missing expected editor placement: ${editor}`);
+}
+if (code.includes('editing !== null ? h(SkillForm') || code.includes('editing !== null ? h(McpForm')) {
+	throw new Error("existing item editors must render inside their corresponding cards");
+}
 let loaded = null;
 const windowShim = { __ModuleLoader__: { load: (record) => { loaded = record; } } };
 const reactStub = {
