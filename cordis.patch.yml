@@ -1,0 +1,6 @@
+# dsh-skill-mcp-manager bundle patch: inserts the manager plugin into the
+# composed tree. Installing this package with `dsh plugin --profile <name> add
+# <path>` makes the row below active on the next boot of that profile.
+- insert:
+    - id: skill-mcp-manager
+      name: dsh-skill-mcp-manager
