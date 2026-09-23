@@ -95,7 +95,18 @@ const registrations = [];
 const slotInjectCalls = [];
 const requests = [];
 const SETTINGS_PATH = clientExports.SETTINGS_PATH;
-const fakeSessions = { list: { getSnapshot: () => ({ current: "sess-1", byId: { "sess-1": { id: "sess-1", cwd: "E:/tmp/workspace" } } }) } };
+/**
+ * Since 0.1.7 `ctx.sessions.list` is a pure catalog: the open session is named
+ * by the retained main view (`retainedBy.mainView > 0`), not by a `current`
+ * field, and `phase` gates the first list pull. The stub models exactly that.
+ */
+const sessionRow = (id, cwd, retainedBy) => ({ id, cwd, retainedBy, blank: false, running: false, displayTitle: id, updatedAt: 0 });
+let listState = {
+	phase: "ready",
+	ids: ["sess-1"],
+	byId: { "sess-1": sessionRow("sess-1", "E:/tmp/workspace", { mainView: 1 }) }
+};
+const fakeSessions = { list: { getSnapshot: () => listState, subscribe: () => () => {} } };
 /** The host route's response stub; reassigned per case below. */
 let responder = async () => new Response("not stubbed", { status: 500 });
 const okResponse = (value) => new Response(JSON.stringify({ ok: true, value }), { status: 200, headers: { "content-type": "application/json" } });
@@ -145,6 +156,9 @@ console.log("registrations:", registrations.map((r) => `${r.options.name}/${r.op
 const section = registrations.find((r) => r.options.name === "settings.section" && r.options.id === "skill-mcp");
 if (!section) throw new Error("settings.section skill-mcp not registered");
 if (!section.options.children?.["settings.skillmcp.tab"]) throw new Error("section must declare the settings.skillmcp.tab child slot");
+// Shipped sections occupy -10..20 (account, general, models, plugins,
+// agent-presets); this one must sit after all of them rather than tie.
+if (!(section.options.order > 20)) throw new Error(`the section must sort after every shipped section, got order ${section.options.order}`);
 const skillsTab = registrations.find((r) => r.options.id === "skills");
 const mcpTab = registrations.find((r) => r.options.id === "mcp");
 if (!skillsTab || !mcpTab) throw new Error("skills/mcp tabs not registered");
@@ -190,9 +204,36 @@ if (broken.ok !== false || broken.error !== "HTTP 500") throw new Error("HTTP fa
 // no session: the page must degrade to its no-session state without calling the host
 const realFetch = globalThis.fetch;
 globalThis.fetch = async () => { throw new Error("must not call the host without a session"); };
-fakeSessions.list.getSnapshot = () => ({ current: void 0, byId: {} });
-const noSession = await skillsInjected.skillsApi.snapshot();
-if (noSession.ok !== false || noSession.error !== "no active session") throw new Error("missing session should short-circuit");
+const noSessionCases = [
+	["catalog not yet pulled", { phase: "pending", ids: [], byId: {} }],
+	["catalog empty", { phase: "ready", ids: [], byId: {} }],
+	["no main view retained", { phase: "ready", ids: ["sess-1"], byId: { "sess-1": sessionRow("sess-1", "E:/tmp/workspace", {}) } }],
+	["row carries no retainedBy at all", { phase: "ready", ids: ["sess-1"], byId: { "sess-1": { id: "sess-1", cwd: "E:/tmp/workspace" } } }]
+];
+for (const [label, state] of noSessionCases) {
+	listState = state;
+	const result = await skillsInjected.skillsApi.snapshot();
+	if (result.ok !== false || result.error !== "no active session") {
+		throw new Error(`${label} must short-circuit as "no active session", got ${JSON.stringify(result)}`);
+	}
+}
+// and the selection read follows the retained main view, not catalog order
+listState = {
+	phase: "ready",
+	ids: ["sess-other", "sess-1"],
+	byId: {
+		"sess-other": sessionRow("sess-other", "E:/tmp/other", {}),
+		"sess-1": sessionRow("sess-1", "E:/tmp/workspace", { mainView: 1 })
+	}
+};
+globalThis.fetch = async (url, init) => {
+	const { payload } = JSON.parse(init.body);
+	if (payload.sessionId !== "sess-1") throw new Error(`must address the retained main view, got ${payload.sessionId}`);
+	if (payload.cwd !== "E:/tmp/workspace") throw new Error(`must carry the main view cwd, got ${payload.cwd}`);
+	return okResponse({});
+};
+const selected = await skillsInjected.skillsApi.snapshot();
+if (selected.ok !== true) throw new Error("a retained main view must be addressable");
 globalThis.fetch = realFetch;
 
 console.log("\nCLIENT BUNDLE SMOKE CHECKS PASSED");

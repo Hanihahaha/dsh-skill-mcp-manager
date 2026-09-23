@@ -4,7 +4,7 @@
 
 DeepSeek Harness(DSH)插件:在会话内直接管理 Harness 的 **Skill** 和 **MCP 服务器**,并提供 **Web 设置页可视化界面**。
 
-> **兼容版本**:已按 `@deepseek-ai/dsh` **0.1.5-rc.1**(cordis **4.0.2**)逐项核对并修正,改动见文末「版本适配记录」。
+> **兼容版本**:已按 `@deepseek-ai/dsh` **0.1.7-alpha.2**(cordis **4.0.4**)逐项核对并修正,改动见文末「版本适配记录」。
 
 - **Skill**:列出、查看、创建、更新、删除 Harness 技能(写入 provider 根目录的 `SKILL.md` bundle,文件系统 watcher 即时生效)。
 - **MCP**:列出、查看、添加、更新、移除、重载 MCP 服务器(操作 loader 中的 `@deepseek-ai/dsh-mcp-client` 条目,热插拔并持久化到 profile 配置)。
@@ -90,19 +90,39 @@ node test/client-smoke.mjs  # 客户端 bundle:加载、apply、插槽注册、�
 
 ## 版本适配记录
 
+### 0.1.7-alpha.2(cordis 4.0.4)
+
+基准:`@deepseek-ai/dsh` **0.1.7-alpha.2**,cordis **4.0.4**(上一版按 `0.1.5-rc.1` / cordis `4.0.2` 编写)。
+
+本轮唯一的**破坏性变更**:客户端会话 API 重构。
+
+- **`ctx.sessions.list` 不再是"列表 + 当前选中"**。0.1.7 把选中态移出了会话域——`SessionListState` 现在只有 `{ ids, byId, phase, projectionsBySession }`,原来的 `current` 字段连同 `open()` / `clear()` 一起消失,文档写明"view selection remains outside the Controller"。插件原先读 `getSnapshot().current` 取当前会话,在 0.1.7 上恒为 `undefined`,设置页会一直停在"需要先打开一个会话"。
+  现改为读取**被主视图保留**的那一行:`Object.values(state.byId).find(s => (s.retainedBy?.mainView ?? 0) > 0)`,并用 `state.phase === "ready"` 作为首次拉取的闸门(否则列表尚未就绪时会误报"没有会话")。这正是官方 0.1.7 的写法——`ui-layout`、`ui-cordis`、`ui-workspace`(4 处)、`ui-session`、`ui-agent-preset`、`settings-general` 共 8 处客户端代码都在用同一读法。`SessionSummary.cwd` 仍然存在,继续用于带出项目级技能根。
+- **设置分区顺序号**。0.1.7 新增了 `agent-presets` 分区(order `20`),与插件原来的 `20` 相撞(同 order 只能靠注册顺序决定先后)。现改为 `25`,排在全部官方分区(account `-10` / general `0` / models `10` / plugins `15` / agent-presets `20`)之后。
+- **`dsh.client.inject` 去掉 `@deepseek-ai/dsh-api-remotes`**。该行原本是为 `remote` 服务预取;上一轮改用自有 Fetch 路由后客户端已不再消费任何 Remote 服务,留着是死条目。现仅保留实际提供 `slots` / `locale` / `connection` / `sessions` / `settings.section` 的五个包。
+- **peerDependencies** 更新为 `^0.1.7-alpha.2`,cordis `~4.0.4`,`@deepseek-ai/schemastery` `~3.18.4`。
+
+核对后确认**未变化**、因此本插件不改:host 端的 `defineTool`(`parameters` / `output.render` / `presentCall`)、`ctx.commands.register` 与 `CommandInvocation`、`ctx.systemPrompt.section` 与 `SECTION_ORDERS`(`TOOL_REPORT = 2900` / `TOOLS_SDK = 5000`,故 `2905` 仍正确)、`ctx.skills.list/get` 的 `SkillSummary` / `SkillDefinition`(0.1.7 只是把 `path` 上移为可选字段,属放宽)、`ctx.loader` 的 `entries/resolve/update` 与 `Entry.options/disabled/fiber`、`fs/observed` 事件形状、`dsh-skill-filesystem` 的根配置项、`dsh-mcp-client` 的 `Config` 联合与 `serverName` 正则、`ctx.agents.get(sessionId)`、profile 补丁层(`cordis:include` + 同目录 `cordis.patch.yml`);客户端侧的 `settings.section` + `children` 注册协议、`ctx.slots.*`(`register` 选项集未变)、`ctx.locale.register/bind`、`ConnectionFetchRoute`(`path` / `methods` / `requestBody` / `fetch`)——`/api` 前缀路由改为 `connection.admit(req)` + `connection/request` waterfall,但信任栅栏与浏览器令牌校验仍在路由之前,本插件的 Fetch 路由依旧只会在已认证请求下执行(未认证实测返回 401)。cordis `Fiber.State` 编号(`DISPOSED=4` / `UNLOADING=5`)在 4.0.4 未变。
+
+顺带记录一个与插件无关、但验证时踩到的 0.1.7 线格式变化:`__DSH_BOOT__` 图行里的 `url` 从 `/plugins/…` 变成了相对路径 `plugins/…`(由宿主负责服务,bundle 不需要感知)。
+
+### 0.1.5-rc.1(cordis 4.0.2)
+
 基准:`@deepseek-ai/dsh` **0.1.5-rc.1**,`@deepseek-ai/dsh-*` 运行时包 **0.1.5-rc.2**,cordis **4.0.2**(上一版按 `0.1.0-rc.6` / cordis `4.0.1` 编写)。
 
 逐项核对后修正的问题:
 
-1. **设置页不再把命令记录写进会话(本次修复的 UI 现象)**。原先设置页走 `ctx.remote.commands.execute(sessionId, "/skill-mgr …")`;每次命令调用都会向会话日志追加一对 `command/run` + `command/done`,而 `command/done` 的 `text` 正是命令返回的整段 JSON,聊天区因此把它渲染成一条永久的 `skill-mgr · {"skills":[…]}` / `mcp-mgr · {"servers":[]}` 行。设置页挂载时读取一次、每次改动后再刷新,所以一次设置访问就留下好几条大 JSON 行。现已改为插件自己的受认证 Fetch 路由 `/api/dsh-skill-mcp-manager`(11 个端点),**完全不产生会话事件**;同时移除了仅供该页使用的 `/skill-mgr`、`/mcp-mgr` 命令(它们会出现在斜杠菜单里,手动调用同样污染日志)。注意:旧版本已经写进日志的行属于会话历史,不会被改写,只影响之后再产生的输出。
-2. **设置页数据桥调用缺少必填参数(同一处代码的功能性缺陷)**。当前 `@deepseek-ai/dsh-commands` 的生成式 Remote 描述符把 `execute` 签名定为 `execute(agentId, line, submittedAttachments, signal?)`,其中 `submittedAttachments` 是 `source: 'json'` + `codec.mode: 'strict'` 的 **数组必填参数**:只传两个参数的调用会在到达宿主 handler 之前被参数校验直接拒绝。该路径现已整体删除(见上一条),取而代之的路由不受此约束。
-3. **fiber 状态标签错位**。cordis 4.0.2 的 `Fiber.State` 为 `PENDING=0 / LOADING=1 / ACTIVE=2 / FAILED=3 / DISPOSED=4 / UNLOADING=5`,旧的位置式映射把 `DISPOSED` 显示成 `unloading`、且完全没有处理 `UNLOADING=5`。现改为按状态常量建表,并与 `@deepseek-ai/dsh-host-plugin-inventory` 的公开投影保持一致(`DISPOSED → null`,即"没有存活实例"),未知数值降级为 `state:<n>`。
+1. **设置页不再把命令记录写进会话**。原先设置页走 `ctx.remote.commands.execute(sessionId, "/skill-mgr …")`;每次命令调用都会向会话日志追加一对 `command/run` + `command/done`,而 `command/done` 的 `text` 正是命令返回的整段 JSON,聊天区因此把它渲染成一条永久的 `skill-mgr · {"skills":[…]}` / `mcp-mgr · {"servers":[]}` 行。设置页挂载时读取一次、每次改动后再刷新,所以一次设置访问就留下好几条大 JSON 行。现已改为插件自己的受认证 Fetch 路由 `/api/dsh-skill-mcp-manager`(11 个端点),**完全不产生会话事件**;同时移除了仅供该页使用的 `/skill-mgr`、`/mcp-mgr` 命令(它们会出现在斜杠菜单里,手动调用同样污染日志)。注意:旧版本已经写进日志的行属于会话历史,不会被改写,只影响之后再产生的输出。
+2. **设置页数据桥调用缺少必填参数(同一处代码的功能性缺陷)**。`@deepseek-ai/dsh-commands` 的生成式 Remote 描述符把 `execute` 签名定为 `execute(agentId, line, submittedAttachments, signal?)`,其中 `submittedAttachments` 是 `source: 'json'` + `codec.mode: 'strict'` 的 **数组必填参数**:只传两个参数的调用会在到达宿主 handler 之前被参数校验直接拒绝。该路径现已整体删除(见上一条),取而代之的路由不受此约束。
+3. **fiber 状态标签错位**。cordis 的 `Fiber.State` 为 `PENDING=0 / LOADING=1 / ACTIVE=2 / FAILED=3 / DISPOSED=4 / UNLOADING=5`,旧的位置式映射把 `DISPOSED` 显示成 `unloading`、且完全没有处理 `UNLOADING=5`。现改为按状态常量建表,并与 `@deepseek-ai/dsh-host-plugin-inventory` 的公开投影保持一致(`DISPOSED → null`,即"没有存活实例"),未知数值降级为 `state:<n>`。
 4. **技能根目录改为读取 provider 自身配置**。`@deepseek-ai/dsh-skill-filesystem` 的根集合是可配置的(`includeDefaultRoots` / `dshHome` / `agentsHome` / `customSkillDirs` / `bundledSkillDir`),旧代码硬编码四个默认根,一旦 profile 覆盖其中任一项,`skill_manager_roots` 的描述就会与实际扫描不符,且 `skill_manager_create root: "user"` 会写到 provider 根本不扫描的目录。现从 loader 中该 provider 条目的 `config` 推导根列表(含 `custom` 与只读的 `bundled`),`skill_manager_roots` 增加 `writable` 字段,扫描顺序与 provider 一致。
 5. **引导段落顺序号过期**。`@deepseek-ai/dsh-system-prompt` 的 `SECTION_ORDERS` 已改为 500~10200 量级(工具段落在 1000~2900),旧的 `115` 会把管理说明排到 harness 身份说明之前;现取 `2905`,紧跟工具指引区块(`TOOL_REPORT = 2900`)。
-6. **`dsh.client.inject` 指向已删除的包**。原清单中的 `@deepseek-ai/dsh-client-runtime` 在当前版本已不存在(该包不再发布);现改为实际提供本插件所依赖服务的包:`dsh-api-remotes` / `dsh-api-session-controller`(`sessions`)/ `dsh-client-connection`(`connection`)/ `dsh-client-locale`(`locale`)/ `dsh-client-ui-renderer`(`slots`)/ `dsh-client-ui-settings`(`settings.section` 声明)。缺失的 inject 行本身只是"不预取",不会致命,但会失去加载顺序保障。
+6. **`dsh.client.inject` 指向已删除的包**。原清单中的 `@deepseek-ai/dsh-client-runtime` 在当前版本已不存在(该包不再发布);改为实际提供本插件所依赖服务的包。缺失的 inject 行本身只是"不预取",不会致命,但会失去加载顺序保障。
 7. **peerDependencies 版本区间**更新为 `^0.1.5-rc.1`(cordis `^4.0.2`),`@deepseek-ai/schemastery` 依赖升到 `^3.18.2`。
 
-核对后确认**未变化**、因此保持原样契约:`defineTool` 的 `parameters` / `output.render` / `presentCall` 形状;`ctx.commands.register` 的 `CommandDefinition`(含 `recordInput`)与 `CommandInvocation`;`ctx.systemPrompt.section`;`ctx.skills.list/get` 的 `SkillSummary` / `SkillDefinition`(`invocation` / `source` / `provider` / `path` / `metadata` / `content`);`fs/observed` 事件的 `(target.displayPath, _observation, actor.name)` 形状与 `edit`/`write` 判定;`ctx.loader` 的 `entries/resolve/create/update/remove` 与 `Entry.options/disabled/fiber`;`@deepseek-ai/dsh-mcp-client` 的 `Config` 联合类型、`serverName` 正则与 `reconnect.*` 字段;profile 补丁层仍是 `cordis:include` 条目旁的同目录 `cordis.patch.yml`;客户端 `settings.section` + `children` 子槽位注册协议、`ctx.slots.*`、`ctx.locale.*` 与 `settings.section` 的 `hooks.tabs` 形状;以及 `connection.fetch` 精确路由契约(`path` 必须形如 `/api/<segment>`、`methods`、`requestBody`、`fetch(request) => Promise<Response>`)——官方同类实现见 `@deepseek-ai/dsh-client-ui-deliverables` 的 `/api/present.open`。
+### 一直未变的契约(两轮均已核对)
+
+`defineTool` 的 `parameters` / `output.render` / `presentCall` 形状;`ctx.commands.register` 的 `CommandDefinition`(含 `recordInput`)与 `CommandInvocation`;`ctx.systemPrompt.section`;`ctx.skills.list/get` 的 `SkillSummary` / `SkillDefinition`(`invocation` / `source` / `provider` / `path` / `metadata` / `content`);`fs/observed` 事件的 `(target.displayPath, _observation, actor.name)` 形状与 `edit`/`write` 判定;`ctx.loader` 的 `entries/resolve/create/update/remove` 与 `Entry.options/disabled/fiber`;`@deepseek-ai/dsh-mcp-client` 的 `Config` 联合类型、`serverName` 正则与 `reconnect.*` 字段;profile 补丁层仍是 `cordis:include` 条目旁的同目录 `cordis.patch.yml`;客户端 `settings.section` + `children` 子槽位注册协议、`ctx.slots.*`、`ctx.locale.*` 与 `settings.section` 的 `hooks.tabs` 形状;以及 `connection.fetch` 精确路由契约(`path` 必须形如 `/api/<segment>`、`methods`、`requestBody`、`fetch(request) => Promise<Response>`)——官方同类实现见 `@deepseek-ai/dsh-client-ui-deliverables` 的 `/api/present.open`。
 
 ## 许可
 

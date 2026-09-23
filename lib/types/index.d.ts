@@ -11,7 +11,7 @@
  * settings page performs, which the chat renders as a permanent
  * `skill-mgr · {…}` row carrying the whole JSON result.
  *
- * Verified against `@deepseek-ai/dsh` 0.1.5-rc.1 (cordis 4.0.2).
+ * Verified against `@deepseek-ai/dsh` 0.1.7-alpha.2 (cordis 4.0.4).
  *
  * @module dsh-skill-mcp-manager
  */
